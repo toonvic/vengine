@@ -1,0 +1,18 @@
+# Ignorar arquivos binários
+*.exe
+*.o
+*.out
+*.obj
+jogo
+
+# Ignorar DLLs (deve ser baixado separadamente)
+SDL2.dll
+SDL2_image.dll
+SDL2_mixer.dll
+
+# Ignorar arquivos temporários e logs
+*.log
+log
+
+# Ignorar pastas de build (caso use)
+build/

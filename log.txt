@@ -1,0 +1,1 @@
+Erro ao carregar a textura 'player.png': Couldn't open player.png
