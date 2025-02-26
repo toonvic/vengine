@@ -52,9 +52,8 @@ void renderGround(SDL_Renderer* renderer, SDL_Texture* texture) {
     SDL_Rect src = { 0, 0, 50, 50 };  // Crop 50x50 from texture
     SDL_Rect dest = { 0, GROUND_Y, 50, 50 }; // Tile size
 
-    // Loop to cover both width and height of the ground
-    for (int y = GROUND_Y; y < SCREEN_HEIGHT; y += 50) { // Cover height
-        for (int x = 0; x < SCREEN_WIDTH; x += 50) { // Cover width
+    for (int y = GROUND_Y; y < SCREEN_HEIGHT; y += 50) {
+        for (int x = 0; x < SCREEN_WIDTH; x += 50) {
             dest.x = x;
             dest.y = y;
             SDL_RenderCopy(renderer, texture, &src, &dest);
@@ -91,6 +90,11 @@ int main(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+        std::cerr << "SDL_mixer initialization failed: " << Mix_GetError() << std::endl;
+        SDL_Quit();
+        return 1;
+    }
 
     SDL_Window* window = SDL_CreateWindow("Vengine!",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -124,6 +128,14 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to load background texture!" << std::endl;
         return 1;
     }
+
+    // Load jump sound
+    Mix_Chunk* jumpSound = Mix_LoadWAV("jump.wav");
+    if (!jumpSound) {
+        std::cerr << "Failed to load jump sound: " << Mix_GetError() << std::endl;
+        return 1;
+    }
+    Mix_VolumeChunk(jumpSound, MIX_MAX_VOLUME / 3);
 
     bool running = true;
     bool dead = false;
@@ -169,6 +181,7 @@ int main(int argc, char* argv[]) {
             if (state[SDL_SCANCODE_UP] && player.onGround) { 
                 player.velocityY = -15;
                 player.onGround = false;
+                Mix_PlayChannel(-1, jumpSound, 0); // 🔊 Play jump sound
             }
 
             player.velocityY += 1;
@@ -211,6 +224,8 @@ int main(int argc, char* argv[]) {
         SDL_Delay(16);
     }
 
+    Mix_FreeChunk(jumpSound);
+    Mix_CloseAudio();
     SDL_DestroyTexture(player.texture);
     SDL_DestroyTexture(monster.texture);
     SDL_DestroyTexture(groundTexture);
