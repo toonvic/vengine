@@ -2,196 +2,218 @@
 #include <SDL_image.h>
 #include <SDL_mixer.h>
 #include <iostream>
-#include <cmath> // Para calcular distância entre jogador e monstro
+#include <cmath> // For distance calculation
 
-// Definições da tela
+// Screen settings
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
 const int PLAYER_WIDTH = 50;
 const int PLAYER_HEIGHT = 50;
-const int MONSTRO_WIDTH = 50;
-const int MONSTRO_HEIGHT = 50;
-const int CHAO_Y = SCREEN_HEIGHT - 100; // Posição do chão
-const int FRAME_TIME = 100; // Tempo entre frames (milissegundos)
+const int MONSTER_WIDTH = 50;
+const int MONSTER_HEIGHT = 50;
+const int GROUND_Y = SCREEN_HEIGHT - 100;
+const int FRAME_TIME = 100;
 
-// Estados da animação
-enum EstadoAnimacao { IDLE, ANDANDO_DIREITA, ANDANDO_ESQUERDA };
+// Animation states
+enum AnimationState { IDLE, WALKING_RIGHT, WALKING_LEFT };
 
-// Estrutura do jogador
-struct Jogador {
+// Player structure
+struct Player {
     int x, y;
-    int velocidadeX;
-    int velocidadeY;
-    bool noChao;
-    EstadoAnimacao estado;
-    SDL_Texture* textura;
-    int frameAtual;
-    Uint32 tempoUltimoFrame;
+    int velocityX;
+    int velocityY;
+    bool onGround;
+    AnimationState state;
+    SDL_Texture* texture;
+    int currentFrame;
+    Uint32 lastFrameTime;
 };
 
-// Estrutura do monstro
-struct Entidade {
+// Monster structure
+struct Entity {
     int x, y;
-    SDL_Texture* textura;
+    SDL_Texture* texture;
 };
 
-// Função para carregar textura
-SDL_Texture* carregarTextura(const char* caminho, SDL_Renderer* renderer) {
-    SDL_Surface* surface = IMG_Load(caminho);
+// Load texture function
+SDL_Texture* loadTexture(const char* path, SDL_Renderer* renderer) {
+    SDL_Surface* surface = IMG_Load(path);
     if (!surface) {
-        std::cerr << "Erro ao carregar imagem: " << IMG_GetError() << std::endl;
+        std::cerr << "Failed to load image: " << IMG_GetError() << std::endl;
         return nullptr;
     }
-    SDL_Texture* textura = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
     SDL_FreeSurface(surface);
-    return textura;
+    return texture;
 }
 
-// Atualizar animação do jogador
-void atualizarAnimacao(Jogador& jogador, int totalFrames) {
-    Uint32 tempoAtual = SDL_GetTicks();
-    if (tempoAtual > jogador.tempoUltimoFrame + FRAME_TIME) {
-        jogador.tempoUltimoFrame = tempoAtual;
-        jogador.frameAtual = (jogador.frameAtual + 1) % totalFrames;
+// Render ground with repeating texture
+void renderGround(SDL_Renderer* renderer, SDL_Texture* texture) {
+    SDL_Rect src = { 0, 0, 50, 50 };  // Crop 50x50 from texture
+    SDL_Rect dest = { 0, GROUND_Y, 50, 50 }; // Tile size
+
+    // Loop to cover both width and height of the ground
+    for (int y = GROUND_Y; y < SCREEN_HEIGHT; y += 50) { // Cover height
+        for (int x = 0; x < SCREEN_WIDTH; x += 50) { // Cover width
+            dest.x = x;
+            dest.y = y;
+            SDL_RenderCopy(renderer, texture, &src, &dest);
+        }
     }
 }
 
-// Calcular distância entre jogador e monstro
-float calcularDistancia(int x1, int y1, int x2, int y2) {
+void renderBackground(SDL_Renderer* renderer, SDL_Texture* texture) {
+    SDL_Rect dest = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
+    SDL_RenderCopy(renderer, texture, NULL, &dest);
+}
+
+// Update player animation
+void updateAnimation(Player& player, int totalFrames) {
+    Uint32 currentTime = SDL_GetTicks();
+    if (currentTime > player.lastFrameTime + FRAME_TIME) {
+        player.lastFrameTime = currentTime;
+        player.currentFrame = (player.currentFrame + 1) % totalFrames;
+    }
+}
+
+// Calculate distance between player and monster
+float calculateDistance(int x1, int y1, int x2, int y2) {
     return std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
 int main(int argc, char* argv[]) {
-    // Inicializar SDL e SDL_image
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
-        std::cerr << "Erro ao inicializar SDL: " << SDL_GetError() << std::endl;
+        std::cerr << "SDL initialization failed: " << SDL_GetError() << std::endl;
         return 1;
     }
     if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
-        std::cerr << "Erro ao inicializar SDL_image: " << IMG_GetError() << std::endl;
+        std::cerr << "SDL_image initialization failed: " << IMG_GetError() << std::endl;
         SDL_Quit();
         return 1;
     }
 
-    // Criar janela e renderizador
-    SDL_Window* window = SDL_CreateWindow("Fuja do Monstro!",
+    SDL_Window* window = SDL_CreateWindow("Vengine!",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!window || !renderer) {
-        std::cerr << "Erro ao criar janela/renderizador: " << SDL_GetError() << std::endl;
+        std::cerr << "Failed to create window/renderer: " << SDL_GetError() << std::endl;
         SDL_Quit();
         return 1;
     }
 
-    // Criar jogador
-    Jogador jogador = { 50, CHAO_Y - PLAYER_HEIGHT, 0, 0, true, IDLE, nullptr, 0, 0 };
-    jogador.textura = carregarTextura("player_spritesheet.png", renderer);
-    if (!jogador.textura) return 1;
+    Player player = { 50, GROUND_Y - PLAYER_HEIGHT, 0, 0, true, IDLE, nullptr, 0, 0 };
+    player.texture = loadTexture("player_spritesheet.png", renderer);
+    if (!player.texture) return 1;
 
-    // Criar monstro
-    Entidade monstro = { SCREEN_WIDTH - MONSTRO_WIDTH - 50, CHAO_Y - MONSTRO_HEIGHT, nullptr };
-    monstro.textura = carregarTextura("enemy.png", renderer);
-    if (!monstro.textura) {
-        std::cerr << "Erro ao carregar a textura do monstro!" << std::endl;
+    Entity monster = { SCREEN_WIDTH - MONSTER_WIDTH - 50, GROUND_Y - MONSTER_HEIGHT, nullptr };
+    monster.texture = loadTexture("enemy.png", renderer);
+    if (!monster.texture) {
+        std::cerr << "Failed to load monster texture!" << std::endl;
         return 1;
     }
 
-    bool rodando = true;
-    bool pausado = false;
-    SDL_Event evento;
-    int totalFrames = 4; // Número de frames por animação
+    SDL_Texture* groundTexture = loadTexture("ground.png", renderer);
+    if (!groundTexture) {
+        std::cerr << "Failed to load ground texture!" << std::endl;
+        return 1;
+    }
 
-    while (rodando) {
-        // Processar eventos
-        while (SDL_PollEvent(&evento)) {
-            if (evento.type == SDL_QUIT) {
-                rodando = false;
-            } else if (evento.type == SDL_KEYDOWN) {
-                if (evento.key.keysym.sym == SDLK_x && pausado) {
-                    // Reiniciar jogo ao pressionar "X"
-                    jogador.x = 50;
-                    jogador.y = CHAO_Y - PLAYER_HEIGHT;
-                    monstro.x = SCREEN_WIDTH - MONSTRO_WIDTH - 50;
-                    pausado = false;
+    SDL_Texture* backgroundTexture = loadTexture("background.png", renderer);
+    if (!backgroundTexture) {
+        std::cerr << "Failed to load background texture!" << std::endl;
+        return 1;
+    }
+
+    bool running = true;
+    bool dead = false;
+    bool paused = false;
+    SDL_Event event;
+    int totalFrames = 4;
+
+    while (running) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running = false;
+            } else if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_x && paused && dead) {
+                    player.x = 50;
+                    player.y = GROUND_Y - PLAYER_HEIGHT;
+                    monster.x = SCREEN_WIDTH - MONSTER_WIDTH - 50;
+                    paused = false;
+                    dead = false;
+                }
+
+                if (event.key.keysym.sym == SDLK_p && !dead) {
+                    paused = !paused;
                 }
             }
         }
 
-        if (!pausado) {
-            // Capturar teclas pressionadas
+        if (!paused) {
             const Uint8* state = SDL_GetKeyboardState(NULL);
-            jogador.velocidadeX = 0;
+            player.velocityX = 0;
 
             if (state[SDL_SCANCODE_LEFT]) {
-                jogador.velocidadeX = -5;
-                jogador.estado = ANDANDO_ESQUERDA;
+                player.velocityX = -5;
+                player.state = WALKING_LEFT;
             }
             else if (state[SDL_SCANCODE_RIGHT]) {
-                jogador.velocidadeX = 5;
-                jogador.estado = ANDANDO_DIREITA;
+                player.velocityX = 5;
+                player.state = WALKING_RIGHT;
             }
             else {
-                jogador.estado = IDLE;
+                player.state = IDLE;
             }
 
-            if (state[SDL_SCANCODE_UP] && jogador.noChao) { 
-                jogador.velocidadeY = -15; // Velocidade para cima (pulo)
-                jogador.noChao = false; // Não está mais no chão
+            if (state[SDL_SCANCODE_UP] && player.onGround) { 
+                player.velocityY = -15;
+                player.onGround = false;
             }
 
-            // Atualizar posição e gravidade
-            jogador.velocidadeY += 1;
-            jogador.x += jogador.velocidadeX;
-            jogador.y += jogador.velocidadeY;
+            player.velocityY += 1;
+            player.x += player.velocityX;
+            player.y += player.velocityY;
 
-            // Limites da tela e chão
-            if (jogador.x < 0) jogador.x = 0;
-            if (jogador.x > SCREEN_WIDTH - PLAYER_WIDTH) jogador.x = SCREEN_WIDTH - PLAYER_WIDTH;
-            if (jogador.y >= CHAO_Y - PLAYER_HEIGHT) {
-                jogador.y = CHAO_Y - PLAYER_HEIGHT;
-                jogador.velocidadeY = 0;
-                jogador.noChao = true;
+            if (player.x < 0) player.x = 0;
+            if (player.x > SCREEN_WIDTH - PLAYER_WIDTH) player.x = SCREEN_WIDTH - PLAYER_WIDTH;
+            if (player.y >= GROUND_Y - PLAYER_HEIGHT) {
+                player.y = GROUND_Y - PLAYER_HEIGHT;
+                player.velocityY = 0;
+                player.onGround = true;
             }
 
-            // Monstro persegue jogador
-            if (monstro.x > jogador.x) monstro.x -= 2;
-            if (monstro.x < jogador.x) monstro.x += 2;
+            if (monster.x > player.x) monster.x -= 2;
+            if (monster.x < player.x) monster.x += 2;
 
-            // Checa colisão
-            if (calcularDistancia(jogador.x, jogador.y, monstro.x, monstro.y) < 50) {
-                pausado = true;
+            if (calculateDistance(player.x, player.y, monster.x, monster.y) < 50) {
+                paused = true;
+                dead = true;
             }
 
-            // Atualiza a animação do jogador
-            atualizarAnimacao(jogador, totalFrames);
+            updateAnimation(player, totalFrames);
         }
 
-        // Renderização
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Fundo preto
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        // Desenhar chão (retângulo cinza)
-        SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
-        SDL_Rect chao = { 0, CHAO_Y, SCREEN_WIDTH, 100 };
-        SDL_RenderFillRect(renderer, &chao);
+        renderBackground(renderer, backgroundTexture);
+        renderGround(renderer, groundTexture);
 
-        // Desenhar jogador com animação
-        SDL_Rect frameAtual = { jogador.frameAtual * PLAYER_WIDTH, jogador.estado * PLAYER_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT };
-        SDL_Rect destino = { jogador.x, jogador.y, PLAYER_WIDTH, PLAYER_HEIGHT };
-        SDL_RenderCopy(renderer, jogador.textura, &frameAtual, &destino);
+        SDL_Rect currentFrame = { player.currentFrame * PLAYER_WIDTH, player.state * PLAYER_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT };
+        SDL_Rect dest = { player.x, player.y, PLAYER_WIDTH, PLAYER_HEIGHT };
+        SDL_RenderCopy(renderer, player.texture, &currentFrame, &dest);
 
-        // Desenhar monstro
-        SDL_Rect destinoMonstro = { monstro.x, monstro.y, MONSTRO_WIDTH, MONSTRO_HEIGHT };
-        SDL_RenderCopy(renderer, monstro.textura, NULL, &destinoMonstro);
+        SDL_Rect monsterDest = { monster.x, monster.y, MONSTER_WIDTH, MONSTER_HEIGHT };
+        SDL_RenderCopy(renderer, monster.texture, NULL, &monsterDest);
 
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
 
-    // Limpeza
-    SDL_DestroyTexture(jogador.textura);
-    SDL_DestroyTexture(monstro.textura);
+    SDL_DestroyTexture(player.texture);
+    SDL_DestroyTexture(monster.texture);
+    SDL_DestroyTexture(groundTexture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     IMG_Quit();
